@@ -3,6 +3,7 @@ import asyncio
 import re
 import ast
 import math
+import difflib  # Added for fuzzy matching
 from pyrogram.errors.exceptions.bad_request_400 import MediaEmpty, PhotoInvalidDimensions, WebpageMediaEmpty
 from Script import script
 import pyrogram
@@ -29,13 +30,11 @@ logger.setLevel(logging.ERROR)
 BUTTONS = {}
 SPELL_CHECK = {}
 
-
 @Client.on_message(filters.group & filters.text & filters.incoming)
 async def give_filter(client, message):
     k = await manual_filters(client, message)
     if k == False:
         await auto_filter(client, message)
-
 
 @Client.on_callback_query(filters.regex(r"^next"))
 async def next_page(bot, query):
@@ -98,7 +97,8 @@ async def next_page(bot, query):
     elif off_set is None:
         btn.append(
             [InlineKeyboardButton(f"🗓 {math.ceil(int(offset) / 10) + 1} / {math.ceil(total / 10)}", callback_data="pages"),
-             InlineKeyboardButton("NEXT ⏩", callback_data=f"next_{req}_{key}_{n_offset}")])
+             InlineKeyboardButton("NEXT ⏩", callback_data=f"next_{req}_{key}_{n_offset}")]
+        )
     else:
         btn.append(
             [
@@ -115,7 +115,6 @@ async def next_page(bot, query):
         pass
     await query.answer()
 
-
 @Client.on_callback_query(filters.regex(r"^spolling"))
 async def advantage_spoll_choker(bot, query):
     _, user, movie_ = query.data.split('#')
@@ -127,7 +126,7 @@ async def advantage_spoll_choker(bot, query):
     if not movies:
         return await query.answer("You are clicking on an old button which is expired.", show_alert=True)
     movie = movies[(int(movie_))]
-    await query.answer('Let's see if it's in my database. මගේ Database එකේ තියෙනවද බලමු...')
+    await query.answer('Checking if it’s in my database...')
     k = await manual_filters(bot, query.message, text=movie)
     if k == False:
         files, offset, total_results = await get_search_results(movie, offset=0, filter=True)
@@ -138,7 +137,6 @@ async def advantage_spoll_choker(bot, query):
             k = await query.message.edit('<b>The film or series you requested is not in my database. Come to the @SubsceneLk_Chat group, inform an admin, and request the film. ඔයා ඉල්ලන Film එක හෝ Series එක මගෙ DataBase එකේ නැහැ. @SubsceneLk_Chat ගෲප් එකට ඇවිත් ඇඩ්මින් කෙනෙක් දැනුවත් කරලා ෆිල්ම් එක ඉල්ලගන්න. 😇</b>')
             await asyncio.sleep(10)
             await k.delete()
-
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -200,7 +198,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer()
 
         group_id = query.data.split(":")[1]
-
         act = query.data.split(":")[2]
         hr = await client.get_chat(int(group_id))
         title = hr.title
@@ -229,11 +226,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer()
 
         group_id = query.data.split(":")[1]
-
         hr = await client.get_chat(int(group_id))
-
         title = hr.title
-
         user_id = query.from_user.id
 
         mkact = await make_active(str(user_id), str(group_id))
@@ -250,9 +244,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer()
 
         group_id = query.data.split(":")[1]
-
         hr = await client.get_chat(int(group_id))
-
         title = hr.title
         user_id = query.from_user.id
 
@@ -291,7 +283,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer()
 
         userid = query.from_user.id
-
         groupids = await all_connections(str(userid))
         if groupids is None:
             await query.message.edit_text(
@@ -614,7 +605,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
             await query.message.edit_reply_markup(reply_markup)
     await query.answer('Piracy Is Crime')
 
-
 async def auto_filter(client, msg, spoll=False):
     if not spoll:
         message = msg
@@ -624,11 +614,15 @@ async def auto_filter(client, msg, spoll=False):
             return
         if 2 < len(message.text) < 100:
             search = message.text
-            files, offset, total_results = await get_search_results(search.lower(), offset=0, filter=True)
+            # Normalize the search query: lowercase, preserve parentheses
+            search_normalized = search.lower().strip()
+            files, offset, total_results = await get_search_results(search_normalized, offset=0, filter=True)
             if not files:
-                if settings["spell_check"]:
+                # Try fuzzy matching if no results
+                files, offset, total_results = await fuzzy_search(search_normalized)
+                if not files and settings["spell_check"]:
                     return await advantage_spell_chok(msg)
-                else:
+                elif not files:
                     return
         else:
             return
@@ -636,6 +630,7 @@ async def auto_filter(client, msg, spoll=False):
         settings = await get_settings(msg.message.chat.id)
         message = msg.message.reply_to_message  # msg will be callback query
         search, files, offset, total_results = spoll
+        search_normalized = search.lower().strip()
     pre = 'filep' if settings['file_secure'] else 'file'
     if settings["button"]:
         btn = [
@@ -708,19 +703,7 @@ async def auto_filter(client, msg, spoll=False):
             **locals()
         )
     else:
-        cap = f"<b>Is that what you are looking for? : {search}\n\nඔයා හොයන ෆිල්ම් එක හෝ ටීවි සීරිස් එක Group එකේ නැද්ද .Is the movie or TV series you're looking for not in the group? ? 🤕\n\nඑහෙනම් අපේ @SubsceneLk_Chat Group එකට ඇවිත් #Request ටයිප් කරලා  ෆිල්ම් එක හෝ සීරිස් එක ඉල්ලගන්න. 🤗\n\nඋදා :Enter the name of the movie or the year along with the name.
-
-EG -: marco ==== marco 2024
-
-This is how to add TV series names
-
-EG -: Kingdom ==== Kingdom S01
-
-Do NOt Enter Bold Font
-Do not Enter Italic Font
-Do not Enter Capital Font
-
-just type Name of the movie</b>"
+        cap = f"<b>Is that what you are looking for? : {search}\n\nඔයා හොයන ෆිල්ම් එක හෝ ටීවි සීරිස් එක Group එකේ නැද්ද .Is the movie or TV series you're looking for not in the group? ? 🤕\n\nඑහෙනම් අපේ @SubsceneLk_Chat Group එකට ඇවිත් #Request ටයිප් කරලා  ෆිල්ම් එක හෝ සීරිස් එක ඉල්ලගන්න. 🤗\n\nඋදා :Enter the name of the movie or the year along with the name.\n\nEG -: marco ==== marco 2024\n\nThis is how to add TV series names\n\nEG -: Kingdom ==== Kingdom S01\n\nDo NOt Enter Bold Font\nDo not Enter Italic Font\nDo not Enter Capital Font\n\njust type Name of the movie</b>"
     if imdb and imdb.get('poster'):
         try:
             await message.reply_photo(photo=imdb.get('poster'), caption=cap[:1024],
@@ -737,49 +720,87 @@ just type Name of the movie</b>"
     if spoll:
         await msg.message.delete()
 
+async def fuzzy_search(query):
+    # Placeholder for fuzzy search logic
+    # This assumes get_search_results can be modified to support fuzzy matching
+    # For now, we'll try a few variations of the query
+    query_variations = [
+        query,
+        query.replace('(', '').replace(')', ''),  # Remove parentheses
+        query.split('(')[0].strip(),  # Remove year in parentheses
+        query.lower().replace(' ', '')  # Remove spaces for tighter matching
+    ]
+    for q in query_variations:
+        files, offset, total_results = await get_search_results(q, offset=0, filter=True)
+        if files:
+            return files, offset, total_results
+    return [], 0, 0
 
 async def advantage_spell_chok(msg):
+    # Preserve years in parentheses and handle misspellings
     query = re.sub(
         r"\b(pl(i|e)*?(s|z+|ease|se|ese|(e+)s(e)?)|((send|snd|giv(e)?|gib)(\sme)?)|movie(s)?|new|latest|br((o|u)h?)*|^h(e|a)?(l)*(o)*|mal(ayalam)?|t(h)?amil|file|that|find|und(o)*|kit(t(i|y)?)?o(w)?|thar(u)?(o)*w?|kittum(o)*|aya(k)*(um(o)*)?|full\smovie|any(one)|with\ssubtitle(s)?)",
-        "", msg.text, flags=re.IGNORECASE)  # plis contribute some common words
-    query = query.strip() + " movie"
+        "", msg.text, flags=re.IGNORECASE)
+    query = query.strip()
+    if not query:
+        k = await msg.reply("Please provide a valid movie or series name.")
+        await asyncio.sleep(8)
+        await k.delete()
+        return
+
+    # Try searching with the year included
     g_s = await search_gagala(query)
-    g_s += await search_gagala(msg.text)
+    g_s += await search_gagala(msg.text)  # Also try the original text
     gs_parsed = []
     if not g_s:
         k = await msg.reply("I couldn't find any movie in that name.")
         await asyncio.sleep(8)
         await k.delete()
         return
-    regex = re.compile(r".*(imdb|wikipedia).*", re.IGNORECASE)  # look for imdb / wiki results
+
+    regex = re.compile(r".*(imdb|wikipedia).*", re.IGNORECASE)
     gs = list(filter(regex.match, g_s))
     gs_parsed = [re.sub(
-        r'\b(\-([a-zA-Z-\s])\-\simdb|(\-\s)?imdb|(\-\s)?wikipedia|\(|\)|\-|reviews|full|all|episode(s)?|film|movie|series)',
+        r'\b(\-([a-zA-Z-\s])\-\simdb|(\-\s)?imdb|(\-\s)?wikipedia|\-|reviews|full|all|episode(s)?|film|series)',
         '', i, flags=re.IGNORECASE) for i in gs]
     if not gs_parsed:
-        reg = re.compile(r"watch(\s[a-zA-Z0-9_\s\-\(\)]*)*\|.*",
-                         re.IGNORECASE)  # match something like Watch Niram | Amazon Prime
+        reg = re.compile(r"watch(\s[a-zA-Z0-9_\s\-\(\)]*)*\|.*", re.IGNORECASE)
         for mv in g_s:
             match = reg.match(mv)
             if match:
                 gs_parsed.append(match.group(1))
     user = msg.from_user.id if msg.from_user else 0
     movielist = []
-    gs_parsed = list(dict.fromkeys(gs_parsed))  # removing duplicates https://stackoverflow.com/a/7961425
+    gs_parsed = list(dict.fromkeys(gs_parsed))  # Remove duplicates
     if len(gs_parsed) > 3:
         gs_parsed = gs_parsed[:3]
-    if gs_parsed:
-        for mov in gs_parsed:
-            imdb_s = await get_poster(mov.strip(), bulk=True)  # searching each keyword in imdb
-            if imdb_s:
-                movielist += [movie.get('title') for movie in imdb_s]
-    movielist += [(re.sub(r'(\-|\(|\)|_)', '', i, flags=re.IGNORECASE)).strip() for i in gs_parsed]
-    movielist = list(dict.fromkeys(movielist))  # removing duplicates
+    
+    # Add fuzzy matching for potential misspellings
+    for mov in gs_parsed:
+        imdb_s = await get_poster(mov.strip(), bulk=True)
+        if imdb_s:
+            movielist += [movie.get('title') for movie in imdb_s]
+    
+    # Normalize movie names for fuzzy matching
+    movielist += [re.sub(r'(\-|\(|\)|_)', '', i, flags=re.IGNORECASE).strip() for i in gs_parsed]
+    movielist = list(dict.fromkeys(movielist))  # Remove duplicates
+
+    # Fuzzy matching to suggest close matches
     if not movielist:
-        k = await msg.reply("ඔයා Type කරපු නම වැරදියි වගේ.. නිවැරදි නම Type කරලා බලන්න.The name you typed seems to be incorrect. Please try typing the correct name.")
+        # Try fuzzy matching against database entries
+        all_movies = await Media.find().to_list(None)  # Fetch all movie titles
+        movie_titles = [m.file_name for m in all_movies if m.file_name]
+        normalized_query = re.sub(r'(\-|\(|\)|_)', '', query, flags=re.IGNORECASE).strip().lower()
+        close_matches = difflib.get_close_matches(normalized_query, [re.sub(r'(\-|\(|\)|_)', '', t, flags=re.IGNORECASE).lower() for t in movie_titles], n=3, cutoff=0.6)
+        if close_matches:
+            movielist = [t for t in movie_titles if re.sub(r'(\-|\(|\)|_)', '', t, flags=re.IGNORECASE).lower() in close_matches]
+
+    if not movielist:
+        k = await msg.reply("The name you typed seems incorrect. Please try typing the correct name or check the spelling.")
         await asyncio.sleep(8)
         await k.delete()
         return
+
     SPELL_CHECK[msg.id] = movielist
     btn = [[
         InlineKeyboardButton(
@@ -788,9 +809,8 @@ async def advantage_spell_chok(msg):
         )
     ] for k, movie in enumerate(movielist)]
     btn.append([InlineKeyboardButton(text="Close", callback_data=f'spolling#{user}#close_spellcheck')])
-    await msg.reply("<b>ඔයා Type කරපු නමින් මගේ DataBase එකේ Film / TV Series නැහැ.There is no film/TV series in my database with the name you typed.\n\nඔයා හොයන්නෙ පල්ලෙහා තියෙන Film හෝ Series වලින් එකක් නම් ඒක උඩ Click කරන්න.If you are looking for one of the films or series below, click on it. 😌👌</b>",
+    await msg.reply("<b>The name you typed doesn't match any film or series in my database.\nIf you're looking for one of the films or series below, click on it. 😌👌</b>",
                     reply_markup=InlineKeyboardMarkup(btn))
-
 
 async def manual_filters(client, message, text=False):
     group_id = message.chat.id

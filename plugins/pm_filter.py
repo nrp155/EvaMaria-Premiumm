@@ -127,7 +127,7 @@ async def advantage_spoll_choker(bot, query):
     if not movies:
         return await query.answer("You are clicking on an old button which is expired.", show_alert=True)
     movie = movies[(int(movie_))]
-    await query.answer('මගේ Database එකේ තියෙනවද බලමු...')
+    await query.answer('Let's see if it's in my database. මගේ Database එකේ තියෙනවද බලමු...')
     k = await manual_filters(bot, query.message, text=movie)
     if k == False:
         files, offset, total_results = await get_search_results(movie, offset=0, filter=True)
@@ -135,7 +135,7 @@ async def advantage_spoll_choker(bot, query):
             k = (movie, files, offset, total_results)
             await auto_filter(bot, query, k)
         else:
-            k = await query.message.edit('<b>ඔයා ඉල්ලන Film එක හෝ Series එක මගෙ DataBase එකේ නැහැ. @MovieClubFamily_Chat ගෲප් එකට ඇවිත් ඇඩ්මින් කෙනෙක් දැනුවත් කරලා ෆිල්ම් එක ඉල්ලගන්න. 😇</b>')
+            k = await query.message.edit('<b>The film or series you requested is not in my database. Come to the @SubsceneLk_Chat group, inform an admin, and request the film. ඔයා ඉල්ලන Film එක හෝ Series එක මගෙ DataBase එකේ නැහැ. @SubsceneLk_Chat ගෲප් එකට ඇවිත් ඇඩ්මින් කෙනෙක් දැනුවත් කරලා ෆිල්ම් එක ඉල්ලගන්න. 😇</b>')
             await asyncio.sleep(10)
             await k.delete()
 
@@ -407,7 +407,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
             InlineKeyboardButton('➕ Add Me To Your Groups ➕', url=f'http://t.me/{temp.U_NAME}?startgroup=true')
         ], [
             InlineKeyboardButton('🔍 Search', switch_inline_query_current_chat=''),
-            InlineKeyboardButton('🤖 Updates', url='https://t.me/MovieClubUpdates')
+            InlineKeyboardButton('🤖 Updates', url='https://t.me/SubsceneLk_Chat')
         ], [
             InlineKeyboardButton('ℹ️ Help', callback_data='help'),
             InlineKeyboardButton('😊 About', callback_data='about')
@@ -438,7 +438,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         )
     elif query.data == "about":
         buttons = [[
-            InlineKeyboardButton('🤖 Updates', url='https://t.me/MovieClubUpdates'),
+            InlineKeyboardButton('🤖 Updates', url='https://t.me/SubsceneLk_Chat'),
             InlineKeyboardButton('♥️ Source', callback_data='source')
         ], [
             InlineKeyboardButton('🏠 Home', callback_data='start'),
@@ -708,7 +708,19 @@ async def auto_filter(client, msg, spoll=False):
             **locals()
         )
     else:
-        cap = f"<b>ඔයා Type කරපු නම : {search}\n\nඔයා හොයන ෆිල්ම් එක හෝ ටීවි සීරිස් එක Group එකේ නැද්ද ? 🤕\n\nඑහෙනම් අපේ @MovieClubFamily_Chat Group එකට ඇවිත් අපිව Mention කරලා ඒ ෆිල්ම් එක හෝ සීරිස් එක ඉල්ලගන්න. 🤗\n\nඋදා : Endgame 2019 </b>"
+        cap = f"<b>Is that what you are looking for? : {search}\n\nඔයා හොයන ෆිල්ම් එක හෝ ටීවි සීරිස් එක Group එකේ නැද්ද .Is the movie or TV series you're looking for not in the group? ? 🤕\n\nඑහෙනම් අපේ @SubsceneLk_Chat Group එකට ඇවිත් #Request ටයිප් කරලා  ෆිල්ම් එක හෝ සීරිස් එක ඉල්ලගන්න. 🤗\n\nඋදා :Enter the name of the movie or the year along with the name.
+
+EG -: marco ==== marco 2024
+
+This is how to add TV series names
+
+EG -: Kingdom ==== Kingdom S01
+
+Do NOt Enter Bold Font
+Do not Enter Italic Font
+Do not Enter Capital Font
+
+just type Name of the movie</b>"
     if imdb and imdb.get('poster'):
         try:
             await message.reply_photo(photo=imdb.get('poster'), caption=cap[:1024],
@@ -764,7 +776,7 @@ async def advantage_spell_chok(msg):
     movielist += [(re.sub(r'(\-|\(|\)|_)', '', i, flags=re.IGNORECASE)).strip() for i in gs_parsed]
     movielist = list(dict.fromkeys(movielist))  # removing duplicates
     if not movielist:
-        k = await msg.reply("ඔයා Type කරපු නම වැරදියි වගේ.. නිවැරදි නම Type කරලා බලන්න.")
+        k = await msg.reply("ඔයා Type කරපු නම වැරදියි වගේ.. නිවැරදි නම Type කරලා බලන්න.The name you typed seems to be incorrect. Please try typing the correct name.")
         await asyncio.sleep(8)
         await k.delete()
         return
@@ -776,7 +788,7 @@ async def advantage_spell_chok(msg):
         )
     ] for k, movie in enumerate(movielist)]
     btn.append([InlineKeyboardButton(text="Close", callback_data=f'spolling#{user}#close_spellcheck')])
-    await msg.reply("<b>ඔයා Type කරපු නමින් මගේ DataBase එකේ Film / TV Series නැහැ.\n\nඔයා හොයන්නෙ පල්ලෙහා තියෙන Film හෝ Series වලින් එකක් නම් ඒක උඩ Click කරන්න. 😌👌</b>",
+    await msg.reply("<b>ඔයා Type කරපු නමින් මගේ DataBase එකේ Film / TV Series නැහැ.There is no film/TV series in my database with the name you typed.\n\nඔයා හොයන්නෙ පල්ලෙහා තියෙන Film හෝ Series වලින් එකක් නම් ඒක උඩ Click කරන්න.If you are looking for one of the films or series below, click on it. 😌👌</b>",
                     reply_markup=InlineKeyboardMarkup(btn))
 
 

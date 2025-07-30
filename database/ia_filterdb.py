@@ -27,13 +27,12 @@ class Media(Document):
     caption = fields.StrField(allow_none=True)
 
     class Meta:
-        indexes = ([("file_name", "text"), ("caption", "text")],)  # Use text index for faster searches
+        indexes = ([("file_name", "text"), ("caption", "text")],)
         collection_name = COLLECTION_NAME
 
 async def save_file(media):
     """Save file in database"""
     file_id, file_ref = unpack_new_file_id(media.file_id)
-    # Normalize file_name for consistency
     file_name = re.sub(r"(_|\-|\.|\+)", " ", str(media.file_name)).lower().strip()
     try:
         file = Media(
@@ -66,32 +65,24 @@ async def get_search_results(query, file_type=None, max_results=10, offset=0, fi
     if not query:
         return [], 0, 0
 
-    # Simplified regex for partial matching
-    raw_pattern = re.escape(query).replace(r'\ ', r'\s*')
     try:
-        regex = re.compile(raw_pattern, flags=re.IGNORECASE)
-    except:
-        return [], 0, 0
+        if USE_CAPTION_FILTER:
+            filter_query = {
+                '$or': [
+                    {'$text': {'$search': f'"{query}"'}},  # Exact phrase search
+                    {'file_name': {'$regex': re.escape(query), '$options': 'i'}},
+                    {'caption': {'$regex': re.escape(query), '$options': 'i'}}
+                ]
+            }
+        else:
+            filter_query = {'$text': {'$search': f'"{query}"'}}  # Use text index
 
-    # Use text search if available, otherwise fallback to regex
-    if USE_CAPTION_FILTER:
-        filter_query = {
-            '$or': [
-                {'$text': {'$search': query}},
-                {'file_name': regex},
-                {'caption': regex}
-            ]
-        }
-    else:
-        filter_query = {'$text': {'$search': query}} if query else {'file_name': regex}
+        if file_type:
+            filter_query['file_type'] = file_type
 
-    if file_type:
-        filter_query['file_type'] = file_type
-
-    try:
         total_results = await Media.count_documents(filter_query)
         cursor = Media.find(filter_query)
-        cursor.sort('$natural', -1)  # Sort by recent
+        cursor.sort('$natural', -1)
         cursor.skip(offset).limit(max_results)
         files = await cursor.to_list(length=max_results)
         next_offset = offset + max_results if len(files) == max_results else ''

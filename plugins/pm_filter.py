@@ -30,15 +30,12 @@ logger.setLevel(logging.ERROR)
 BUTTONS = {}
 SPELL_CHECK = {}
 
-# Normalize text to handle bold, italic, and other Telegram formatting
 def normalize_text(text):
     if not text:
         return ""
-    # Remove Telegram Markdown/HTML formatting
-    text = re.sub(r'(\*\*|__|\*|_|\~\~|`{1,3})', '', text)  # Remove **, __, *, _, ~~, ```
-    text = re.sub(r'<[^>]+>', '', text)  # Remove HTML tags (e.g., <b>, <i>)
-    text = text.lower().strip()  # Convert to lowercase and strip whitespace
-    return text
+    text = re.sub(r'(\*\*|__|\*|_|\~\~|`{1,3})', '', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    return text.lower().strip()
 
 @Client.on_message(filters.group & filters.text & filters.incoming)
 async def give_filter(client, message):
@@ -619,29 +616,34 @@ async def auto_filter(client, msg, spoll=False):
     if not spoll:
         message = msg
         settings = await get_settings(message.chat.id)
-        if message.text.startswith("/"): return  # ignore commands
+        if message.text.startswith("/"): return
         if re.findall("((^\/|^,|^!|^\.|^[\U0001F600-\U000E007F]).*)", message.text):
             return
         if 2 < len(message.text) < 100:
-            search = normalize_text(message.text)  # Normalize input text
+            search = normalize_text(message.text)
             if not search:
                 return
-            # Try direct database search first
             files, offset, total_results = await get_search_results(search, offset=0, filter=True)
-            if not files:
-                # Try fuzzy search
-                files, offset, total_results = await fuzzy_search(search)
-                if not files and settings["spell_check"]:
-                    return await advantage_spell_chok(msg)
-                elif not files:
-                    return
-        else:
-            return
+            if files:
+                await send_results(client, message, search, files, offset, total_results, settings)
+                return
+            files, offset, total_results = await fuzzy_search(search)
+            if files:
+                await send_results(client, message, search, files, offset, total_results, settings)
+                return
+            if settings["spell_check"]:
+                await advantage_spell_chok(msg)
+        return
     else:
         settings = await get_settings(msg.message.chat.id)
-        message = msg.message.reply_to_message  # msg will be callback query
+        message = msg.message.reply_to_message
         search, files, offset, total_results = spoll
         search = normalize_text(search)
+        await send_results(client, message, search, files, offset, total_results, settings)
+        if spoll:
+            await msg.message.delete()
+
+async def send_results(client, message, search, files, offset, total_results, settings):
     pre = 'filep' if settings['file_secure'] else 'file'
     if settings["button"]:
         btn = [
@@ -679,6 +681,7 @@ async def auto_filter(client, msg, spoll=False):
         btn.append(
             [InlineKeyboardButton(text="🗓 1/1", callback_data="pages")]
         )
+
     imdb = await get_poster(search, file=(files[0]).file_name) if settings["imdb"] else None
     TEMPLATE = settings['template']
     if imdb:
@@ -715,10 +718,11 @@ async def auto_filter(client, msg, spoll=False):
         )
     else:
         cap = f"<b>Is that what you are looking for? : {search}\n\nඔයා හොයන ෆිල්ම් එක හෝ ටීවි සීරිස් එක Group එකේ නැද්ද .Is the movie or TV series you're looking for not in the group? ? 🤕\n\nඑහෙනම් අපේ @SubsceneLk_Chat Group එකට ඇවිත් #Request ටයිප් කරලා  ෆිල්ම් එක හෝ සීරිස් එක ඉල්ලගන්න. 🤗\n\nඋදා :Enter the name of the movie or the year along with the name.\n\nEG -: marco ==== marco 2024\n\nThis is how to add TV series names\n\nEG -: Kingdom ==== Kingdom S01\n\njust type Name of the movie</b>"
+
     if imdb and imdb.get('poster'):
         try:
             await message.reply_photo(photo=imdb.get('poster'), caption=cap[:1024],
-                                      reply_markup=InlineKeyboardMarkup(btn))
+                                     reply_markup=InlineKeyboardMarkup(btn))
         except (MediaEmpty, PhotoInvalidDimensions, WebpageMediaEmpty):
             pic = imdb.get('poster')
             poster = pic.replace('.jpg', "._V1_UX360.jpg")
@@ -728,16 +732,13 @@ async def auto_filter(client, msg, spoll=False):
             await message.reply_text(cap, reply_markup=InlineKeyboardMarkup(btn))
     else:
         await message.reply_text(cap, reply_markup=InlineKeyboardMarkup(btn))
-    if spoll:
-        await msg.message.delete()
 
 async def fuzzy_search(query):
-    # Try variations of the query for better matching
     query_variations = [
         query,
-        query.replace('(', '').replace(')', ''),  # Remove parentheses
-        query.split('(')[0].strip(),  # Remove year
-        query.replace(' ', '')  # Remove spaces
+        query.replace('(', '').replace(')', ''),
+        query.split('(')[0].strip(),
+        query.replace(' ', '')
     ]
     for q in query_variations:
         files, offset, total_results = await get_search_results(q, offset=0, filter=True)
@@ -753,69 +754,51 @@ async def advantage_spell_chok(msg):
         await k.delete()
         return
 
-    # Simplified regex to preserve years and core movie name
     query_cleaned = re.sub(
         r"\b(pl(i|e)*?(s|z+|ease|se|ese|(e+)s(e)?)|((send|snd|giv(e)?|gib)(\sme)?)|new|latest|br((o|u)h?)*|^h(e|a)?(l)*(o)*|mal(ayalam)?|t(h)?amil|file|that|find|und(o)*|kit(t(i|y)?)?o(w)?|thar(u)?(o)*w?|kittum(o)*|aya(k)*(um(o)*)?|full\smovie|any(one)|with\ssubtitle(s)?)",
         "", query, flags=re.IGNORECASE).strip()
-    
+
     if not query_cleaned:
         k = await msg.reply("Please provide a valid movie or series name.")
         await asyncio.sleep(8)
         await k.delete()
         return
 
-    # Try local database first to reduce external API calls
     files, offset, total_results = await get_search_results(query_cleaned, offset=0, filter=True)
     if files:
-        await auto_filter(msg.client, msg, spoll=(query_cleaned, files, offset, total_results))
+        settings = await get_settings(msg.chat.id)
+        await send_results(msg.client, msg, query_cleaned, files, offset, total_results, settings)
         return
 
-    # Fallback to external search if no local results
-    g_s = await search_gagala(query_cleaned)
-    g_s += await search_gagala(query)
-    gs_parsed = []
-    if not g_s:
-        # Try fuzzy matching in database
-        all_movies = await Media.find().to_list(100)  # Limit to 100 for speed
-        movie_titles = [normalize_text(m.file_name) for m in all_movies if m.file_name]
-        normalized_query = re.sub(r'(\-|$$ | $$|_)', '', query_cleaned, flags=re.IGNORECASE).strip()
-        close_matches = difflib.get_close_matches(normalized_query, [re.sub(r'(\-|$$ | $$|_)', '', t, flags=re.IGNORECASE) for t in movie_titles], n=3, cutoff=0.6)
-        if close_matches:
-            movielist = [t for t in movie_titles if re.sub(r'(\-|$$ | $$|_)', '', t, flags=re.IGNORECASE) in close_matches]
-        else:
-            k = await msg.reply("I couldn't find any movie in that name. Try the correct spelling.")
-            await asyncio.sleep(8)
-            await k.delete()
-            return
-    else:
-        regex = re.compile(r".*(imdb|wikipedia).*", re.IGNORECASE)
-        gs = list(filter(regex.match, g_s))
-        gs_parsed = [re.sub(
-            r'\b(\-([a-zA-Z-\s])\-\simdb|(\-\s)?imdb|(\-\s)?wikipedia|\-|reviews|full|all|episode(s)?|film|series)',
-            '', i, flags=re.IGNORECASE) for i in gs]
-        if not gs_parsed:
-            reg = re.compile(r"watch(\s[a-zA-Z0-9_\s\-$$  $$]*)*\|.*", re.IGNORECASE)
-            for mv in g_s:
-                match = reg.match(mv)
-                if match:
-                    gs_parsed.append(match.group(1))
-        movielist = []
-        gs_parsed = list(dict.fromkeys(gs_parsed))  # Remove duplicates
-        if len(gs_parsed) > 3:
-            gs_parsed = gs_parsed[:3]
-        for mov in gs_parsed:
-            imdb_s = await get_poster(mov.strip(), bulk=True)
-            if imdb_s:
-                movielist += [movie.get('title') for movie in imdb_s]
-        movielist += [re.sub(r'(\-|$$ | $$|_)', '', i, flags=re.IGNORECASE).strip() for i in gs_parsed]
-        movielist = list(dict.fromkeys(movielist))  # Remove duplicates
-        if not movielist:
-            # Fallback to database fuzzy matching
-            all_movies = await Media.find().to_list(100)  # Limit for speed
-            movie_titles = [normalize_text(m.file_name) for m in all_movies if m.file_name]
-            normalized_query = re.sub(r'(\-|$$ | $$|_)', '', query_cleaned, flags=re.IGNORECASE).strip()
-            close_matches = difflib.get_close_matches(normalized_query, [re.sub(r'(\-|$$ | $$|_)', '', t, flags=re.IGNORECASE) for t in movie_titles], n=3, cutoff=0.6)
-            movielist = [t for t in movie_titles if re.sub(r'(\-|$$ | $$|_)', '', t, flags=re.IGNORECASE) in close_matches]
+    all_movies = await Media.find().to_list(50)
+    movie_titles = [normalize_text(m.file_name) for m in all_movies if m.file_name]
+    normalized_query = re.sub(r'(\-|\(|\)|_)', '', query_cleaned, flags=re.IGNORECASE).strip()
+    close_matches = difflib.get_close_matches(normalized_query, [re.sub(r'(\-|\(|\)|_)', '', t, flags=re.IGNORECASE) for t in movie_titles], n=3, cutoff=0.6)
+    movielist = [t for t in movie_titles if re.sub(r'(\-|\(|\)|_)', '', t, flags=re.IGNORECASE) in close_matches]
+
+    if not movielist:
+        g_s = await search_gagala(query_cleaned)
+        if g_s:
+            gs_parsed = []
+            regex = re.compile(r".*(imdb|wikipedia).*", re.IGNORECASE)
+            gs = list(filter(regex.match, g_s))
+            gs_parsed = [re.sub(
+                r'\b(\-([a-zA-Z-\s])\-\simdb|(\-\s)?imdb|(\-\s)?wikipedia|\-|reviews|full|all|episode(s)?|film|series)',
+                '', i, flags=re.IGNORECASE) for i in gs]
+            if not gs_parsed:
+                reg = re.compile(r"watch(\s[a-zA-Z0-9_\s\-\(\)]*)*\|.*", re.IGNORECASE)
+                for mv in g_s:
+                    match = reg.match(mv)
+                    if match:
+                        gs_parsed.append(match.group(1))
+            movielist = list(dict.fromkeys(gs_parsed))
+            if len(movielist) > 3:
+                movielist = movielist[:3]
+            for mov in movielist:
+                imdb_s = await get_poster(mov.strip(), bulk=True)
+                if imdb_s:
+                    movielist += [movie.get('title') for movie in imdb_s]
+            movielist = list(dict.fromkeys(movielist))
 
     if not movielist:
         k = await msg.reply("The name you typed seems incorrect. Please try typing the correct name or check the spelling.")
